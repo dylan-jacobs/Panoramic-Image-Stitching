@@ -13,7 +13,7 @@ sift = cv2.SIFT_create()
 
 
 ### Step 1: Feature Detection using SIFT ###
-def match_images(img1, img2):
+def match_images(img1, img2, plot=False):
     features1, descriptors1 = sift.detectAndCompute(img1, None)
     features2, descriptors2 = sift.detectAndCompute(img2, None)
 
@@ -25,12 +25,16 @@ def match_images(img1, img2):
     matches = bfMatcher.knnMatch(queryDescriptors=descriptors1, trainDescriptors=descriptors2, k=2)
     best_matches = [m for m, n in matches if m.distance < 0.3*n.distance]
 
-    points1 = [features1[m.queryIdx] for m in best_matches]
-    matches = cv2.drawMatches(img1, features1, img2, features2, best_matches, None)
+    # Extract the points in each image from the best matches 
+    points1 = [features1[m.queryIdx].pt for m in best_matches]
+    points2 = [features2[m.queryIdx].pt for m in best_matches]
 
-    cv2.imshow("Feature matches", matches)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    if plot:
+        matches = cv2.drawMatches(img1, features1, img2, features2, best_matches, None)
+        cv2.imshow("Feature matches", matches)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    return points1, points2
 
 
 for i in range(1, len(img_paths)):
