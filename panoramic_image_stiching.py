@@ -1,13 +1,23 @@
 import cv2
 import numpy as np
+import tkinter as tk
+from tkinter import filedialog
 
 # jonahs-paths 
-img_paths = [f"../../material/harbor_{i}.jpg" for i in range(1, 7)]
+default_img_paths = [f"../../material/harbor_{i}.jpg" for i in range(1, 7)]
+
 # dylans-paths
-# img_paths = ["../Image-Data/harbor_1.jpg", "../Image-Data/harbor_2.jpg"]
+default_img_paths = [f"../Image-Data/harbor_{i}.jpg" for i in range(1, 7)]
 
+# OPTIONAL: add your own paths as default paths here! 
+# However, these will only be used 
+# if you don't select any files to 
+# use at runtime using the file picker
+# default_img_paths = [<>, <>, ...]
 
-master_img = cv2.imread(img_paths[0])
+# final pano dimensions
+final_width = 1000
+
 sift = cv2.SIFT_create()
 
 ### Step 1: Feature Detection using SIFT ###
@@ -21,6 +31,7 @@ def match_images(img1, img2, plot=False):
     # First, we match each feature in img1 with 2 (k=2) features in img2
     # Then, we only use the feature if there is one match that is significantly better than the other--presumeably erroneous--matching
     matches = bfMatcher.knnMatch(queryDescriptors=descriptors1, trainDescriptors=descriptors2, k=2)
+
     # 0.75 is the threshold for the Lowe's ratio test
     best_matches = [m for m, n in matches if m.distance < 0.75*n.distance]
 
@@ -48,7 +59,6 @@ def feather_blend(img_a, img_b):
 
     out = img_a.astype(np.float32) * w_a + img_b.astype(np.float32) * (1 - w_a)
     return np.clip(out, 0, 255).astype(np.uint8)
-
 
 def RANSAC(pts1, pts2, img1, img2, plot=False):
     height1, width1 = img1.shape[:2]
@@ -98,6 +108,11 @@ def RANSAC(pts1, pts2, img1, img2, plot=False):
     canvas1 = np.zeros_like(canvas2)
     canvas1[ty:ty + height1, tx:tx + width1] = img1
 
+    # without feather blend
+    # canvas1[ty:ty + height1, tx + width1:] = canvas2[ty:ty + height1, tx + width1:]
+    # panorama = canvas1
+
+
     # feather-blend the two canvases (smooth crossfade, no hard seam)
     panorama = feather_blend(canvas1, canvas2)
 
@@ -116,27 +131,63 @@ def RANSAC(pts1, pts2, img1, img2, plot=False):
     # return the bbox-cropped panorama
     return panorama_cropped
 
+def resize_pano(img, final_width=final_width):
+    pano_height, pano_width = img.shape[:2]
+    aspect_ratio = 1 # want to preserve initial ratio --> use 1
+    sx = final_width / pano_width
+    sy = aspect_ratio * sx
+    M = np.array([[sx, 0, 0],
+                [0, sy, 0],
+                [0,  0, 1]], dtype=np.float64)
+    final_panorama = cv2.warpPerspective(img, M, (final_width, int(pano_height * sy)))
+    return final_panorama
 
-# original images
-for p in img_paths:
-    cv2.imshow(p, cv2.imread(p))
+def open_file_dialog():
+    root = tk.Tk()
+    root.withdraw()
 
-for i in range(1, len(img_paths)):
-    img = cv2.imread(img_paths[i])
-    if img is None:
-        print(f"Failed to load {img_paths[i]}")
-        quit()
+    paths = filedialog.askopenfilenames(
+        title="Select images", 
+        filetypes=[
+            ("All Files", "*.*"),
+            ("Images", "*.png *.jpg *.jpeg")])
+    return list(paths)
 
-    print(f"Stitching image {i + 1}/{len(img_paths)}: {img_paths[i]}")
-    pts1, pts2 = match_images(master_img, img)
-    new_pano = RANSAC(pts1, pts2, master_img, img)
-    if new_pano is None:
-        print(f"  -> skipped {img_paths[i]} (could not stitch)")
-        continue
-    master_img = new_pano   # grow the panorama for the next iteration
 
-cv2.imshow("Panorama", master_img)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+if __name__ == '__main__':
+
+    img_paths = open_file_dialog()
+    if len(img_paths) < 1:
+        print("You need to select at least one image! Using default images...")
+        img_paths = default_img_paths
+
+    print(img_paths)
+    master_img = cv2.imread(img_paths[0])
+
+    # show original images
+    for p in img_paths:
+        cv2.imshow(p, cv2.imread(p))
+
+    for i in range(1, len(img_paths)):
+        img = cv2.imread(img_paths[i])
+        if img is None:
+            print(f"Failed to load {img_paths[i]}")
+            quit()
+
+        print(f"Stitching image {i + 1}/{len(img_paths)}: {img_paths[i]}")
+        pts1, pts2 = match_images(master_img, img)
+        new_pano = RANSAC(pts1, pts2, master_img, img)
+        if new_pano is None:
+            print(f"  -> skipped {img_paths[i]} (could not stitch)")
+            continue
+        master_img = new_pano   # grow the panorama for the next iteration
+
+
+    # now shrink pano to fit desired dimensions
+    final_panorama = resize_pano(master_img)
+
+    cv2.imshow("Panorama", final_panorama)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 
