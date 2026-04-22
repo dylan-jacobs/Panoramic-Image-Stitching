@@ -1,10 +1,10 @@
 import cv2
 import numpy as np
 
-# img_paths = ["../Image-Data/harbor_1.jpg", "../Image-Data/harbor_2.jpg"]
-# jonah-paths
-img_paths = ["../../material/harbor_1.jpg", "../../material/harbor_2.jpg"]
-#img_paths = ["../Image-Data/room1.jpg", "../Image-Data/room2.jpg"]
+# jonah-paths 
+img_paths = [f"../../material/harbor_{i}.jpg" for i in range(1, 7)]
+# img_paths = ["../../material/Landscape1.jpg", "../../material/Landscape2.jpg"]
+# img_paths = ["../../material/Traffic1.jpg", "../../material/Traffic2.jpg", "../../material/Traffic3.jpg"]
 
 imgs = []
 features = []
@@ -90,21 +90,32 @@ def RANSAC(pts1, pts2, img1, img2, plot=False):
     x, y, w, h = cv2.boundingRect(img2_nonzero)
     panorama_cropped = panorama[y:y+h, x:x+w]
 
-    cv2.imshow("Original 1", img1)
-    cv2.imshow("Original 2", img2)
-    cv2.imshow("Transformation (uncropped)", panorama)
-    cv2.imshow("Transformation (cropped)", panorama_cropped)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+
+    # setting up final display for panorama
+    if plot:
+        cv2.imshow("Intermediate stitch", panorama_cropped)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+    # return the bbox-cropped panorama
+    return panorama_cropped
 
 for i in range(1, len(img_paths)):
     img = cv2.imread(img_paths[i])
     if img is None:
-        print('Failed to load image')
+        print(f"Failed to load {img_paths[i]}")
         quit()
-    #imgs.append(img)
 
+    print(f"Stitching image {i + 1}/{len(img_paths)}: {img_paths[i]}")
     pts1, pts2 = match_images(master_img, img)
-    RANSAC(pts1, pts2, master_img, img)
+    new_pano = RANSAC(pts1, pts2, master_img, img)
+    if new_pano is None:
+        print(f"  -> skipped {img_paths[i]} (could not stitch)")
+        continue
+    master_img = new_pano   # grow the panorama for the next iteration
+
+cv2.imshow("Panorama", master_img)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
 
 
