@@ -7,9 +7,6 @@ img_paths = [f"../../material/harbor_{i}.jpg" for i in range(1, 7)]
 # img_paths = ["../Image-Data/harbor_1.jpg", "../Image-Data/harbor_2.jpg"]
 
 
-imgs = []
-features = []
-descriptors = []
 master_img = cv2.imread(img_paths[0])
 sift = cv2.SIFT_create()
 
@@ -110,7 +107,6 @@ def RANSAC(pts1, pts2, img1, img2, plot=False):
     x, y, w, h = cv2.boundingRect(img2_nonzero)
     panorama_cropped = panorama[y:y+h, x:x+w]
 
-
     # setting up final display for panorama
     if plot:
         cv2.imshow("Intermediate stitch", panorama_cropped)
@@ -120,6 +116,10 @@ def RANSAC(pts1, pts2, img1, img2, plot=False):
     # return the bbox-cropped panorama
     return panorama_cropped
 
+
+# original images
+for p in img_paths:
+    cv2.imshow(p, cv2.imread(p))
 
 for i in range(1, len(img_paths)):
     img = cv2.imread(img_paths[i])
