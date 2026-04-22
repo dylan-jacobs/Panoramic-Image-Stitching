@@ -1,7 +1,9 @@
 import cv2
 import numpy as np
 
-img_paths = ["../Image-Data/harbor_1.jpg", "../Image-Data/harbor_2.jpg"]
+# img_paths = ["../Image-Data/harbor_1.jpg", "../Image-Data/harbor_2.jpg"]
+# jonah-paths
+img_paths = ["../../material/harbor_1.jpg", "../../material/harbor_2.jpg"]
 #img_paths = ["../Image-Data/room1.jpg", "../Image-Data/room2.jpg"]
 
 imgs = []
@@ -9,8 +11,6 @@ features = []
 descriptors = []
 master_img = cv2.imread(img_paths[0])
 sift = cv2.SIFT_create()
-
-
 
 ### Step 1: Feature Detection using SIFT ###
 def match_images(img1, img2, plot=False):
@@ -23,7 +23,8 @@ def match_images(img1, img2, plot=False):
     # First, we match each feature in img1 with 2 (k=2) features in img2
     # Then, we only use the feature if there is one match that is significantly better than the other--presumeably erroneous--matching
     matches = bfMatcher.knnMatch(queryDescriptors=descriptors1, trainDescriptors=descriptors2, k=2)
-    best_matches = [m for m, n in matches if m.distance < 0.3*n.distance]
+    # 0.75 is the threshold for the Lowe's ratio test
+    best_matches = [m for m, n in matches if m.distance < 0.75*n.distance]
 
     # Extract the points in each image from the best matches 
     points1 = np.float32([features1[m.queryIdx].pt for m in best_matches])
@@ -41,18 +42,49 @@ def RANSAC(pts1, pts2, img1, img2, plot=False):
     height1, width1 = img1.shape[:2]
     height2, width2 = img2.shape[:2]
 
+    # 8 DoF so we need at least 4 point pairs for a homography, 10 is stable apparently
+    if len(pts1) < 10:
+        print(f"Not enough matches to compute homography ({len(pts1)} < 10)")
+        return None
+
     # Find homography
     M, _ = cv2.findHomography(pts2, pts1, cv2.RANSAC)
 
-    # Creat panorama
-    panorama = cv2.warpPerspective(img2, M, (width1 + width2, height2))
+    if M is None:
+        print("findHomography failed to find a valid model")
+        return None
 
-    # Place first image
-    panorama[0:height1, 0:width1] = img1
+    # NOTE for Dylan:
+    # The below steps I added is to figure out the canvas size dynamically
+    # Warp 4 corners of img2 through M to see where it will land in img1's frame
+    # Now we can ensure nothing falls off the edges
 
-    # Align second image
-    img2_transformed = cv2.warpPerspective(img2, M, (width1, height1))
-    img2_gray = cv2.cvtColor(panorama, cv2.COLOR_RGB2GRAY, None)
+    # Get the corners of img1 and img2
+    corners1 = np.float32([[0, 0], [0, height1], [width1, height1], [width1, 0]]).reshape(-1, 1, 2)
+    corners2 = np.float32([[0, 0], [0, height2], [width2, height2], [width2, 0]]).reshape(-1, 1, 2)
+
+    # warp corners of img2 through M
+    warped_corners2 = cv2.perspectiveTransform(corners2, M)
+    all_corners = np.concatenate([corners1, warped_corners2], axis=0)
+
+    # canvas size + translation offsets
+    x_min, y_min = np.int32(all_corners.min(axis=0).ravel() - 0.5)
+    x_max, y_max = np.int32(all_corners.max(axis=0).ravel() + 0.5)
+    tx, ty = -x_min, -y_min                         # translation offsets
+    canvas_w, canvas_h = x_max - x_min, y_max - y_min
+
+    # translation matrix so nothing lands at negative coordinates.
+    T = np.array([[1, 0, tx],
+                  [0, 1, ty],
+                  [0, 0, 1]], dtype=np.float64)
+
+    # warp img2 into the canvas (translation + homography in one shot)
+    panorama = cv2.warpPerspective(img2, T @ M, (canvas_w, canvas_h))
+
+    # drop img1 into place at the translated location
+    panorama[ty:ty + height1, tx:tx + width1] = img1
+
+    img2_gray = cv2.cvtColor(panorama, cv2.COLOR_BGR2GRAY, None)
     _, threshold = cv2.threshold(img2_gray, 1, 255, cv2.THRESH_BINARY)
     img2_nonzero = cv2.findNonZero(threshold)
     x, y, w, h = cv2.boundingRect(img2_nonzero)
