@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
 
-# jonah-paths 
+# jonahs-paths 
 img_paths = [f"../../material/harbor_{i}.jpg" for i in range(1, 7)]
-# img_paths = ["../../material/Landscape1.jpg", "../../material/Landscape2.jpg"]
-# img_paths = ["../../material/Traffic1.jpg", "../../material/Traffic2.jpg", "../../material/Traffic3.jpg"]
+# dylans-paths
+# img_paths = ["../Image-Data/harbor_1.jpg", "../Image-Data/harbor_2.jpg"]
+
 
 imgs = []
 features = []
@@ -36,6 +37,20 @@ def match_images(img1, img2, plot=False):
         cv2.waitKey(0)
         cv2.destroyAllWindows()
     return points1, points2
+
+# Distance-transform feathering: so the seam between the two images fades smoothly
+def feather_blend(img_a, img_b):
+    mask_a = (cv2.cvtColor(img_a, cv2.COLOR_BGR2GRAY) > 0).astype(np.uint8)
+    mask_b = (cv2.cvtColor(img_b, cv2.COLOR_BGR2GRAY) > 0).astype(np.uint8)
+
+    d_a = cv2.distanceTransform(mask_a, cv2.DIST_L2, 3)
+    d_b = cv2.distanceTransform(mask_b, cv2.DIST_L2, 3)
+
+    total = np.maximum(d_a + d_b, 1e-6) # avoid div-by-zero
+    w_a = (d_a / total)[..., None] # img_b weight is (1 - w_a)
+
+    out = img_a.astype(np.float32) * w_a + img_b.astype(np.float32) * (1 - w_a)
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def RANSAC(pts1, pts2, img1, img2, plot=False):
@@ -79,10 +94,15 @@ def RANSAC(pts1, pts2, img1, img2, plot=False):
                   [0, 0, 1]], dtype=np.float64)
 
     # warp img2 into the canvas (translation + homography in one shot)
-    panorama = cv2.warpPerspective(img2, T @ M, (canvas_w, canvas_h))
+    canvas2 = cv2.warpPerspective(img2, T @ M, (canvas_w, canvas_h))
 
-    # drop img1 into place at the translated location
-    panorama[ty:ty + height1, tx:tx + width1] = img1
+    # place img1 onto its own canvas at the translated location, so both
+    # canvases are the same size and feather_blend can weigh them per-pixel
+    canvas1 = np.zeros_like(canvas2)
+    canvas1[ty:ty + height1, tx:tx + width1] = img1
+
+    # feather-blend the two canvases (smooth crossfade, no hard seam)
+    panorama = feather_blend(canvas1, canvas2)
 
     img2_gray = cv2.cvtColor(panorama, cv2.COLOR_BGR2GRAY, None)
     _, threshold = cv2.threshold(img2_gray, 1, 255, cv2.THRESH_BINARY)
@@ -99,6 +119,7 @@ def RANSAC(pts1, pts2, img1, img2, plot=False):
 
     # return the bbox-cropped panorama
     return panorama_cropped
+
 
 for i in range(1, len(img_paths)):
     img = cv2.imread(img_paths[i])
