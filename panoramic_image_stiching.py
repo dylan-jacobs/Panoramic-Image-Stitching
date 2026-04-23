@@ -1,3 +1,13 @@
+"""
+Authors: Dylan Jacobs and Jonah Pflaster
+Date: 23 April, 2026
+Project: Given a set of images, stitch them together 
+         to output a panoramic image using SIFT
+         feature matching, and RANSAC to compute
+         image homographies.
+"""
+
+
 import cv2
 import numpy as np
 import tkinter as tk
